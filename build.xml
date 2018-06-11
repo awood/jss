@@ -1,0 +1,259 @@
+<project default="help">
+  <property name="XCFLAGS" value="-g"/>
+  <property name="use_installed_nspr" value="true"/>
+  <property name="use_installed_nss" value="true"/>
+  <property name="debug" value="true"/>
+
+  <property name="builddir" value="${basedir}/target"/>
+  <property name="javadoc_dest" value="${builddir}/jssdoc"/>
+  <property name="javah_dest" value="${builddir}/private/jss/_jni"/>
+  <property name="javac_dest" value="${builddir}/classes"/>
+
+  <macrodef name="cflags">
+    <attribute name="lib" default="NOT SET"/>
+    <attribute name="property" default="NOT SET"/>
+    <sequential>
+      <exec executable="pkg-config" searchpath="true">
+        <arg line="--cflags-only-I @{lib}" />
+        <env key="PKG_CONFIG_ALLOW_SYSTEM_CFLAGS" value="1"/>
+        <redirector outputproperty="@{property}">
+          <outputfilterchain>
+            <tokenfilter>
+              <replaceregex pattern="-I" replace="" flags="g"/>
+            </tokenfilter>
+          </outputfilterchain>
+        </redirector>
+      </exec>
+    </sequential>
+  </macrodef>
+
+  <macrodef name="libflags">
+    <attribute name="lib" default="NOT SET"/>
+    <attribute name="property" default="NOT SET"/>
+    <sequential>
+      <exec executable="pkg-config" searchpath="true">
+        <arg line="--libs-only-L @{lib}" />
+        <env key="PKG_CONFIG_ALLOW_SYSTEM_LIBS" value="1"/>
+        <redirector outputproperty="@{property}">
+          <outputfilterchain>
+            <tokenfilter>
+              <replaceregex pattern="-L" replace="" flags="g"/>
+            </tokenfilter>
+          </outputfilterchain>
+        </redirector>
+      </exec>
+    </sequential>
+  </macrodef>
+
+  <loadfile srcFile="org/mozilla/jss/util/jssver.h" property="jss_revision">
+    <filterchain>
+      <linecontains>
+        <contains value="JSS_VERSION"/>
+      </linecontains>
+      <tokenfilter>
+        <replaceregex pattern="#define\s+JSS_VERSION\s+" replace=""/>
+        <trim/>
+        <deletecharacters chars='"'/>
+        <replaceregex pattern="(\d+\.\d+)\.\d+" replace="\1"/>
+      </tokenfilter>
+    </filterchain>
+  </loadfile>
+
+  <condition property="USE_64" value="1" else="0">
+    <os arch="amd64"/>
+  </condition>
+
+  <condition property="debug_source_file" value="Debug_debug.jnot" else="Debug_ship.jnot">
+    <istrue value="${debug}"/>
+  </condition>
+
+  <condition property="jar_file_name" value="${builddir}/xpclass_dbg.jar" else="${builddir}/xpclass.jar">
+    <istrue value="${debug}"/>
+  </condition>
+
+  <fail message="Only builds from installed NSPR and NSS libraries are currently supported in ant">
+    <condition>
+      <or>
+        <isfalse value="${use_installed_nspr}"/>
+        <isfalse value="${use_installed_nss}"/>
+      </or>
+    </condition>
+  </fail>
+
+  <target name="clean">
+    <delete file="org/mozilla/jss/util/Debug.java"/>
+    <delete dir="${builddir}"/>
+  </target>
+
+  <target name="build" depends="clean,jar,compile_native"/>
+
+  <path id="classpath">
+    <pathelement location="/usr/share/java/apache-commons-codec.jar"/>
+    <pathelement location="/usr/share/java/apache-commons-lang.jar"/>
+    <pathelement location="/usr/share/java/ldapjdk.jar"/>
+  </path>
+
+  <target name="javadoc">
+    <mkdir dir="javadoc_dest"/>
+    <javadoc sourcepath="${basedir}" destdir="${javadoc_dest}" breakiterator="yes" classpath="${javac_dest}">
+      <packageset dir="org/mozilla/jss">
+        <include name="asn1"/>
+        <include name="crypto"/>
+        <include name="pkcs7"/>
+        <include name="pkcs10"/>
+        <include name="pkcs11"/>
+        <include name="pkcs12"/>
+        <include name="pkix/primitive"/>
+        <include name="pkix/cert"/>
+        <include name="pkix/cmc"/>
+        <include name="pkix/cmmf"/>
+        <include name="pkix/cms"/>
+        <include name="pkix/crmf"/>
+        <include name="provider/java/security"/>
+        <include name="provider/javax/crypto"/>
+        <include name="SecretDecoderRing"/>
+        <include name="ssl"/>
+        <include name="tests"/>
+        <include name="util"/>
+      </packageset>
+    </javadoc>
+    <copy file="${javadoc_dest}/index.html" tofile="${javadoc_dest}/index.html.bak"/>
+    <copy file="${javadoc_dest}/overview-summary.html" tofile="${javadoc_dest}/index.html"/>
+  </target>
+
+  <target name="compile">
+    <copy file="org/mozilla/jss/util/${debug_source_file}" tofile="org/mozilla/jss/util/Debug.java" overwrite="true"/>
+
+    <mkdir dir="${javac_dest}"/>
+    <!-- Use nativeheaderdir="${basedir}" once files are tagged with @Native annotations -->
+    <javac
+      srcdir="${basedir}"
+      destdir="${javac_dest}"
+      classpathref="classpath"
+      debug="${debug}"
+      includeantruntime="false">
+      <exclude name="org/mozilla/jss/provider/java/security/KeyFactorySpi1_4.java"/>
+      <exclude name="org/mozilla/jss/pkix/cert/X509Certificate.java"/>
+      <exclude name="samples/**/*.java"/>
+    </javac>
+    <delete file="org/mozilla/jss/util/Debug.java"/>
+
+    <mkdir dir="${javah_dest}"/>
+    <javah destdir="${javah_dest}" classpath="${javac_dest}">
+      <class name="org.mozilla.jss.DatabaseCloser"/>
+      <class name="org.mozilla.jss.CryptoManager"/>
+      <class name="org.mozilla.jss.crypto.Algorithm"/>
+      <class name="org.mozilla.jss.crypto.EncryptionAlgorithm"/>
+      <class name="org.mozilla.jss.crypto.PQGParams"/>
+      <class name="org.mozilla.jss.crypto.SecretDecoderRing"/>
+      <class name="org.mozilla.jss.asn1.ASN1Util"/>
+      <class name="org.mozilla.jss.pkcs11.CertProxy"/>
+      <class name="org.mozilla.jss.pkcs11.CipherContextProxy"/>
+      <class name="org.mozilla.jss.pkcs11.PK11Module"/>
+      <class name="org.mozilla.jss.pkcs11.ModuleProxy"/>
+      <class name="org.mozilla.jss.pkcs11.PK11Cert"/>
+      <class name="org.mozilla.jss.pkcs11.PK11Cipher"/>
+      <class name="org.mozilla.jss.pkcs11.PK11KeyWrapper"/>
+      <class name="org.mozilla.jss.pkcs11.PK11MessageDigest"/>
+      <class name="org.mozilla.jss.pkcs11.PK11PrivKey"/>
+      <class name="org.mozilla.jss.pkcs11.PK11PubKey"/>
+      <class name="org.mozilla.jss.pkcs11.PK11SymKey"/>
+      <class name="org.mozilla.jss.pkcs11.PK11KeyPairGenerator"/>
+      <class name="org.mozilla.jss.pkcs11.PK11SymmetricKeyDeriver"/>
+      <class name="org.mozilla.jss.pkcs11.PK11KeyGenerator"/>
+      <class name="org.mozilla.jss.pkcs11.PK11Token"/>
+      <class name="org.mozilla.jss.pkcs11.PrivateKeyProxy"/>
+      <class name="org.mozilla.jss.pkcs11.PublicKeyProxy"/>
+      <class name="org.mozilla.jss.pkcs11.SymKeyProxy"/>
+      <class name="org.mozilla.jss.pkcs11.KeyProxy"/>
+      <class name="org.mozilla.jss.pkcs11.PK11Token"/>
+      <class name="org.mozilla.jss.pkcs11.TokenProxy"/>
+      <class name="org.mozilla.jss.pkcs11.PK11Signature"/>
+      <class name="org.mozilla.jss.pkcs11.PK11Store"/>
+      <class name="org.mozilla.jss.pkcs11.PK11KeyPairGenerator"/>
+      <class name="org.mozilla.jss.pkcs11.SigContextProxy"/>
+      <class name="org.mozilla.jss.pkcs11.PK11RSAPublicKey"/>
+      <class name="org.mozilla.jss.pkcs11.PK11DSAPublicKey"/>
+      <class name="org.mozilla.jss.pkcs11.PK11ECPublicKey"/>
+      <class name="org.mozilla.jss.pkcs11.PK11SecureRandom"/>
+      <class name="org.mozilla.jss.provider.java.security.JSSKeyStoreSpi"/>
+      <class name="org.mozilla.jss.SecretDecoderRing.KeyManager"/>
+      <class name="org.mozilla.jss.ssl.SSLSocket"/>
+      <class name="org.mozilla.jss.ssl.SSLServerSocket"/>
+      <class name="org.mozilla.jss.ssl.SocketBase"/>
+      <class name="org.mozilla.jss.util.Debug"/>
+      <class name="org.mozilla.jss.util.Password"/>
+    </javah>
+  </target>
+
+  <target name="compile_native" depends="compile">
+    <cflags lib="nspr" property="NSPR_INCLUDE_DIR"/>
+    <libflags lib="nspr" property="NSPR_LIB_DIR"/>
+
+    <cflags lib="nss" property="NSS_INCLUDE_DIR"/>
+    <libflags lib="nss" property="NSS_LIB_DIR"/>
+
+    <echo message="Building version ${jss_revision}"/>
+    <echo message="NSPR include: ${NSPR_INCLUDE_DIR}"/>
+    <echo message="NSPR lib: ${NSPR_LIB_DIR}"/>
+    <echo message="NSS include: ${NSS_INCLUDE_DIR}"/>
+    <echo message="NSS lib: ${NSS_LIB_DIR}"/>
+    <echo message="Use 64: ${USE_64}"/>
+
+    <exec executable="make" searchpath="true" dir="coreconf/nsinstall">
+      <arg value="OBJDIR=${builddir}/$$(OBJDIR_NAME)"/>
+    </exec>
+
+    <exec executable="make" searchpath="true">
+      <arg value="private_export"/>
+      <arg value="NSINSTALL_DIR=${builddir}"/>
+      <env key="SOURCE_PREFIX" value="${builddir}"/>
+    </exec>
+
+    <exec executable="make" searchpath="true">
+      <arg value="libs"/>
+      <arg value="OBJDIR=${builddir}/$$(OBJDIR_NAME)"/>
+      <arg value="NSINSTALL_DIR=${builddir}"/>
+      <arg value="SHARED_LIBRARY_DIRS=${builddir}/$$(OBJDIR_NAME)"/>
+      <env key="SOURCE_PREFIX" value="${builddir}"/>
+      <env key="XCFLAGS" value="${XCFLAGS}"/>
+      <env key="USE_64" value="${USE_64}"/>
+      <env key="NSS_INCLUDE_DIR" value="${NSS_INCLUDE_DIR}"/>
+      <env key="NSPR_INCLUDE_DIR" value="${NSPR_INCLUDE_DIR}"/>
+      <env key="NSS_LIB_DIR" value="${NSS_LIB_DIR}"/>
+      <env key="NSPR_LIB_DIR" value="${NSPR_LIB_DIR}"/>
+    </exec>
+
+    <copy todir="${builddir}" verbose="true" flatten="true">
+      <fileset dir="${builddir}">
+        <include name="**/libjss4.so"/>
+      </fileset>
+    </copy>
+  </target>
+
+  <target name="jar" depends="compile">
+    <manifest file="${builddir}/MANIFEST.MF">
+      <attribute name="Manifest-Version" value="1.0"/>
+      <section name="org/mozilla/jss">
+        <attribute name="Specification-Title" value="Network Security Services for Java (JSS)"/>
+        <attribute name="Specification-Version" value="${jss_revision}"/>
+        <attribute name="Specification-Vendor" value="Mozilla Foundation"/>
+        <attribute name="Implementation-Title" value="org.mozilla.jss"/>
+        <attribute name="Implementation-Version" value="${jss_revision}"/>
+        <attribute name="Implementation-Vendor" value="Mozilla Foundation"/>
+      </section>
+    </manifest>
+
+    <jar destfile="${jar_file_name}" basedir="${javac_dest}" manifest="${builddir}/MANIFEST.MF"/>
+  </target>
+
+  <target name="help">
+    <echo message="Available targets:"/>
+    <echo message="compile        - Compile *.java files"/>
+    <echo message="compile_native - Compile *.c files in libjss4.so"/>
+    <echo message="build          - clean task then jar and compile_native task"/>
+    <echo message="jar            - Builds a JAR file"/>
+    <echo message="javadoc        - Builds javadoc"/>
+    <echo message="clean          - Remove *.class and build artifacts"/>
+  </target>
+</project>
